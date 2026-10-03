@@ -37,3 +37,7 @@ Requires macOS 14+ and the Xcode Command Line Tools (`xcode-select --install`); 
 Logs: `log show --last 1h --predicate 'subsystem == "com.belerico.claude-usage"'`.
 
 The usage endpoint and the Codex app-server API are undocumented and may change.
+
+## License
+
+[MIT](LICENSE)
