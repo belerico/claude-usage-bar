@@ -35,6 +35,8 @@ struct AgentState {
     var plan: String?
     var limits: [LimitMeter] = []
     var limitsError: String?
+    /// The limits failed because the Claude Code login expired or is missing.
+    var needsLogin = false
     var limitsAttemptedAt: Date?
     var stats: TokenStats?
     var updatedAt: Date?
@@ -47,11 +49,13 @@ final class UsageStore: ObservableObject {
         didSet { tab.agent.map { refresh($0) } }
     }
     @Published private(set) var states: [Agent: AgentState] = [:]
+    @Published private(set) var loggingIn = false
 
     private let prefs = Preferences.shared
     private let sources: [Agent: UsageSource] = [.claude: ClaudeSource(), .codex: CodexSource()]
     private let alerts = LimitAlerts()
     private var pollTask: Task<Void, Never>?
+    private var login: Process?
     private var subscriptions: Set<AnyCancellable> = []
 
     init() {
@@ -153,16 +157,41 @@ final class UsageStore: ObservableObject {
                     state.plan = snapshot.plan ?? state.plan
                     state.limits = snapshot.meters
                     state.limitsError = nil
+                    state.needsLogin = false
                     alerts.check(agent, meters: snapshot.meters, threshold: prefs.alertAt)
                     log.notice("\(agent.rawValue, privacy: .public): \(snapshot.meters.map { "\($0.title) \(Int($0.percent))%" }.joined(separator: ", "), privacy: .public)")
                 } catch {
                     state.limitsError = error.localizedDescription
+                    state.needsLogin = (error as? ClaudeError)?.needsLogin ?? false
                     log.error("\(agent.rawValue, privacy: .public) limits failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
             state.updatedAt = .now
             state.loading = false
             states[agent] = state
+        }
+    }
+
+    /// Runs `claude auth login`, restarting it if one is already waiting for the browser, and
+    /// refetches the limits once it exits.
+    func logIn() {
+        if let login, login.isRunning { login.terminate() }
+        do {
+            login = try ClaudeLogin.start { [weak self] process in
+                let id = ObjectIdentifier(process), status = process.terminationStatus
+                Task { @MainActor in
+                    guard let self, let login = self.login, ObjectIdentifier(login) == id else { return }
+                    log.notice("claude auth login exited with status \(status)")
+                    self.login = nil
+                    self.loggingIn = false
+                    self.states[.claude]?.limitsAttemptedAt = nil
+                    self.refresh(.claude)
+                }
+            }
+            loggingIn = true
+        } catch {
+            states[.claude, default: AgentState()].limitsError = error.localizedDescription
+            log.error("claude auth login failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
@@ -182,6 +211,7 @@ struct ClaudeUsageApp: App {
     @ObservedObject private var prefs = Preferences.shared
 
     init() {
+        ClaudeLogin.openURLAsBrowser()
         // Writing to a codex app-server that died must fail with EPIPE, not kill the app.
         signal(SIGPIPE, SIG_IGN)
         if CommandLine.arguments.contains("--dump") { Self.dumpAndExit() }

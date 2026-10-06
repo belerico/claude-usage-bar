@@ -20,6 +20,22 @@ protocol UsageSource: Sendable {
     func scanStats(modelWindowDays: Int?) -> TokenStats
 }
 
+/// The `claude` and `codex` CLIs the app runs.
+enum CommandLineTool {
+    // Launched by launchd, the app gets a bare PATH without Homebrew or npm prefixes.
+    static let searchPath: String = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let extra = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.npm-global/bin", "\(home)/.bun/bin"]
+        return ([ProcessInfo.processInfo.environment["PATH"]].compactMap { $0 } + extra).joined(separator: ":")
+    }()
+
+    static func find(_ name: String) -> URL? {
+        searchPath.split(separator: ":")
+            .map { URL(fileURLWithPath: String($0)).appending(path: name) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+}
+
 /// One API response from a transcript, reduced to what the panel shows.
 struct TokenRecord: Codable {
     var key: String?

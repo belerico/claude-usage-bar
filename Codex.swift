@@ -68,13 +68,6 @@ final class CodexSource: UsageSource, @unchecked Sendable {
     private static let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map(URL.init(fileURLWithPath:))
         ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
 
-    // Launched by launchd, the app gets a bare PATH without Homebrew or npm prefixes.
-    private static let searchPath: String = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let extra = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.npm-global/bin", "\(home)/.bun/bin"]
-        return ([ProcessInfo.processInfo.environment["PATH"]].compactMap { $0 } + extra).joined(separator: ":")
-    }()
-
     private let index = TranscriptIndex(name: "codex",
                                         roots: [home.appending(path: "sessions"), home.appending(path: "archived_sessions")],
                                         appendOnly: false, parse: CodexSource.parse)
@@ -143,19 +136,13 @@ final class CodexSource: UsageSource, @unchecked Sendable {
         return (["GPT-\(parts[1])"] + parts.dropFirst(2).map(\.capitalized)).joined(separator: " ")
     }
 
-    private static func findCodex() -> URL? {
-        searchPath.split(separator: ":")
-            .map { URL(fileURLWithPath: String($0)).appending(path: "codex") }
-            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
-    }
-
     /// Starts `codex app-server`, asks it for the rate limits over JSON-RPC on stdio, and stops it.
     private static func readRateLimits() throws -> LimitsSnapshot {
-        guard let codex = findCodex() else { throw CodexError.notInstalled }
+        guard let codex = CommandLineTool.find("codex") else { throw CodexError.notInstalled }
         let process = Process()
         process.executableURL = codex
         process.arguments = ["-s", "read-only", "-a", "on-request", "app-server"]
-        process.environment = ProcessInfo.processInfo.environment.merging(["PATH": searchPath]) { $1 }
+        process.environment = ProcessInfo.processInfo.environment.merging(["PATH": CommandLineTool.searchPath]) { $1 }
         let input = Pipe()
         let output = Pipe()
         process.standardInput = input

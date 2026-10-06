@@ -85,7 +85,8 @@ struct PanelView: View {
             TabBar(selected: $store.tab, showCodex: prefs.showCodex)
             if let agent = store.tab.agent {
                 let state = store.state(agent)
-                PanelSection("Limits") { LimitsList(state: state) }
+                let logIn: (() -> Void)? = state.needsLogin ? { store.logIn() } : nil
+                PanelSection("Limits") { LimitsList(state: state, loggingIn: store.loggingIn, logIn: logIn) }
                 PanelSection("Tokens by day") { DayList(stats: state.stats) }
                 PanelSection("Tokens by model", note: prefs.modelWindow.note) { ModelList(stats: state.stats) }
             } else {
@@ -223,23 +224,44 @@ private struct Bar: View {
 private struct LimitsList: View {
     @Environment(\.theme) private var theme
     let state: AgentState
+    let loggingIn: Bool
+    /// Set when logging in again would fix the error; the error then becomes a button.
+    let logIn: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if state.limits.isEmpty {
-                Text(state.limitsError ?? (state.loading ? "Loading…" : "No limits reported."))
-                    .font(theme.font(11))
-                    .foregroundStyle(theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let error = state.limitsError {
+                    errorNote(error).font(theme.font(11)).foregroundStyle(theme.dim)
+                } else {
+                    Text(state.loading ? "Loading…" : "No limits reported.")
+                        .font(theme.font(11))
+                        .foregroundStyle(theme.dim)
+                }
             } else {
                 ForEach(state.limits) { LimitRow(meter: $0) }
                 if let error = state.limitsError {
-                    Text(error)
-                        .font(theme.font(10.5))
-                        .foregroundStyle(theme.warning)
-                        .fixedSize(horizontal: false, vertical: true)
+                    errorNote(error).font(theme.font(10.5)).foregroundStyle(theme.warning)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func errorNote(_ error: String) -> some View {
+        if let logIn {
+            Button(action: logIn) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(error).fixedSize(horizontal: false, vertical: true)
+                    Text(loggingIn ? "Waiting for the browser sign-in… (click to restart)" : "Log in again ↗")
+                        .underline()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Runs `claude auth login` and opens its sign-in page in the browser")
+        } else {
+            Text(error).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

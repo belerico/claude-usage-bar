@@ -22,7 +22,9 @@ It mirrors Omarchy's `omarchy-agent-usage-claude` and `omarchy-agent-usage-codex
 
 Transcripts are indexed in `~/Library/Caches/com.belerico.claude-usage/`, so after the first
 scan only new lines are read. The app never refreshes the OAuth token itself (that would rotate
-Claude Code's refresh token); if it expires, running `claude` refreshes it.
+Claude Code's refresh token); if it expires, running `claude` refreshes it. Or click the error in
+the panel to run `claude auth login`: its sign-in page opens in the Chrome profile signed in to
+your Claude account's email (from `~/.claude.json`), or in the default browser if there is none.
 
 ## Install
 
